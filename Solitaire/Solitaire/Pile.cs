@@ -1,31 +1,46 @@
-﻿using System;
+﻿using Microsoft.Xna.Framework;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 
 namespace Solitaire
 {
-    partial class IPile
+    abstract class Pile
     {
         protected Stack<Card> cards;
 
-        public IPile(Stack<Card> c)
-        {
-            cards = c;
-        }
+        abstract public void addCard(Card card);
+        abstract public Card removeCard();
+        abstract public bool canPlaceCard(Card card);
 
-        public void addCard(Card card);
-        public Card removeCard();
-        public bool canPlaceCard(Card card);
+        public List<Card> getCards()
+        {
+            return cards.ToList<Card>();
+        }
     }
 
-    class Deck : IPile
+    class Deck : Pile
     {
         Stack<Card> hand;
 
-        public Deck(Stack<Card> c, Stack<Card> h) : base(c)
+        public Deck(Stack<Card> c)
         {
-            hand = h;
+            cards = c;
+            hand = new Stack<Card>();
+
+            foreach (Card card in cards)
+                card.pos = Solitaire.deckPos;
+        }
+
+        public override void addCard(Card card)
+        {
+            throw new NotImplementedException();
+        }
+
+        public override Card removeCard()
+        {
+            return cards.Pop();
         }
 
         public void tryTakeCards(int cardCount)
@@ -36,46 +51,89 @@ namespace Solitaire
                     cardCount = cards.Count;
 
                 for (int i = 0; i < cardCount; i++)
-                    hand.Push(cards.Pop());
+                    hand.Push(removeCard());
             }
             else
             {
                 cards = (Stack<Card>) hand.Reverse();
+                hand.Clear();
             }
         }
 
-        public bool canPlaceCard()
+        public override bool canPlaceCard(Card c)
         {
             return false;
         }
+
+        public List<Card> getHand()
+        {
+            return hand.ToList<Card>();
+        }
+
+        public override string ToString()
+        {
+            string ret = "DECK:\n";
+
+            foreach (Card c in cards)
+            {
+                ret += "    " + c.ToString() + "\n";
+            }
+
+            ret += "HAND\n";
+
+            foreach (Card c in hand)
+            {
+                ret += "    " + c.ToString() + "\n";
+            }
+
+            return ret;
+        }
     }
 
-    class FieldPile : IPile
+    class FieldPile : Pile
     {
-        public FieldPile(List<Card> c) : base(new Stack<Card>(c))
+        int pos;
+
+        public FieldPile(List<Card> c, int p)
         {
+            cards = new Stack<Card>();
+            pos = p;
+
             for (int i = 0; i < c.Count - 1; i++)
             {
                 c[i].IsVisible = false;
                 cards.Push(c[i]);
             }
 
-            c.Last().IsVisible = true;
-            cards.Push(c.Last());
+            Card last = c.Last();
+
+            last.IsVisible = true;
+            cards.Push(last);
+
+            Vector2 basePos = Solitaire.fieldPositions[pos];
+
+            for (int i = 0; i < cards.Count; i++)
+            {
+                Card card = cards.ElementAt(i);
+                card.pos = new Vector2(basePos.X, basePos.Y + Solitaire.fieldOffset * (cards.Count - 1 - i));
+            }
         }
 
-        public void addCard(Card card)
+        public override void addCard(Card card)
         {
             if (canPlaceCard(card))
+            {
                 cards.Push(card);
+                card.pos = Solitaire.fieldPositions[pos];
+            }
         }
 
-        public Card removeCard()
+        public override Card removeCard()
         {
             return cards.Pop();
         }
 
-        public bool canPlaceCard(Card card)
+        public override bool canPlaceCard(Card card)
         {
             if (cards.Count == 0)
                 return card.cardNumber == 13;
@@ -86,24 +144,48 @@ namespace Solitaire
                 (topCard.suit == "clubs" || topCard.suit == "spades") && (card.suit == "hearts" || card.suit == "diamonds")) &&
                 card.cardNumber == topCard.cardNumber - 1;
         }
+
+        public override string ToString()
+        {
+            string ret = "CARDS:\n";
+
+            foreach (Card c in cards)
+            {
+                ret += "    " + c.ToString() + "\n";
+            }
+
+            return ret;
+        }
     }
 
-    class GoalPile : IPile
+    class GoalPile : Pile
     {
-        public GoalPile() : base(new Stack<Card>()) {}
+        int pos;
 
-        public void addCard(Card card)
+        public GoalPile(int p)
         {
-            if (canPlaceCard(card))
-                cards.Push(card);
+            cards = new Stack<Card>();
+            pos = p;
+
+            foreach (Card card in cards)
+                card.pos = Solitaire.goalPositions[pos];
         }
 
-        public Card removeCard()
+        public override void addCard(Card card)
+        {
+            if (canPlaceCard(card))
+            {
+                cards.Push(card);
+                card.pos = Solitaire.goalPositions[pos];
+            }
+        }
+
+        public override Card removeCard()
         {
             return cards.Pop();
         }
-        
-        public bool canPlaceCard(Card card)
+
+        public override bool canPlaceCard(Card card)
         {
             if (cards.Count == 0)
                 return card.cardNumber == 1;
@@ -116,6 +198,18 @@ namespace Solitaire
         public bool isComplete()
         {
             return cards.Count == 13;
+        }
+
+        public override string ToString()
+        {
+            string ret = "CARDS:\n";
+
+            foreach (Card c in cards)
+            {
+                ret += "    " + c.ToString() + "\n";
+            }
+
+            return ret;
         }
     }
 }

@@ -15,13 +15,31 @@ using System.Text.RegularExpressions;
 namespace Solitaire
 {
     public enum MouseButtons { Left, Right, Middle };
+    public enum GridTypes { Deck, Field, Goal };
     /// <summary>
     /// This is the main type for your game
     /// </summary>
     public class Solitaire : Microsoft.Xna.Framework.Game
     {
         public static float cardScale = 0.3f;
-        public static Texture2D cardBack;
+        public static Texture2D cardBack, emptyPile;
+
+        public static int screenWidth = 1280;
+        public static int screenHeight = 720;
+
+        public static int cardTextureWidth = 500;
+        public static int cardTextureHeight = 726;
+
+        public static Rectangle cardBounds;
+
+        public static int fieldOffset = 5;
+
+        public static float gridWidth, gridHeight;
+
+        public static Vector2 deckPos;
+        public static List<Vector2> fieldPositions, goalPositions;
+
+        Field game;
 
         MouseState previousMouseState, currentMouseState;
 
@@ -31,16 +49,8 @@ namespace Solitaire
         List<Card> cards;
         Random rng;
 
-        int width = 1280;
-        int height = 720;
-
-        int cardTextureWidth = 500;
-        int cardTextureHeight = 726;
-
-        int maxAttempts = 100;
-        bool placingCards = false;
-
         Card clickedCard;
+        Vector2 clickedCardStartPos;
 
         public Solitaire()
         {
@@ -48,8 +58,8 @@ namespace Solitaire
 
             IsMouseVisible = true;
 
-            graphics.PreferredBackBufferWidth = width;
-            graphics.PreferredBackBufferHeight = height;
+            graphics.PreferredBackBufferWidth = screenWidth;
+            graphics.PreferredBackBufferHeight = screenHeight;
 
             Content.RootDirectory = "Content";
         }
@@ -68,6 +78,26 @@ namespace Solitaire
 
             previousMouseState = currentMouseState = Mouse.GetState();
 
+            gridWidth = screenWidth / 7;
+            gridHeight = (cardTextureHeight * cardScale) + 10;
+
+            deckPos = Vector2.Zero;
+
+            fieldPositions = new List<Vector2>();
+            goalPositions = new List<Vector2>();
+
+            for (int i = 0; i < 8; i++)
+            {
+                fieldPositions.Add(new Vector2(i * gridWidth, gridHeight));
+            }
+
+            for (int i = 3; i < 7; i++)
+            {
+                goalPositions.Add(new Vector2(i * gridWidth, 0));
+            }
+
+            cardBounds = new Rectangle(0, 0, (int) (cardTextureWidth * cardScale), (int) (cardTextureHeight * cardScale));
+
             base.Initialize();
         }
 
@@ -81,6 +111,7 @@ namespace Solitaire
             spriteBatch = new SpriteBatch(GraphicsDevice);
 
             cardBack = Content.Load<Texture2D>("Cards\\back");
+            emptyPile = Content.Load<Texture2D>("Cards\\empty");
 
             foreach (string suit in new string[]{"hearts", "diamonds", "clubs", "spades"})
             {
@@ -89,6 +120,9 @@ namespace Solitaire
                     cards.Add(new Card(Content.Load<Texture2D>("Cards\\" + i + "-" + suit), i, suit));
                 }
             }
+
+            game = new Field(cards);
+            Console.WriteLine(game.ToString());
         }
 
         /// <summary>
@@ -114,40 +148,25 @@ namespace Solitaire
             if (GamePad.GetState(PlayerIndex.One).Buttons.Back == ButtonState.Pressed || Keyboard.GetState().IsKeyDown(Keys.Escape))
                 this.Exit();
 
-            if (Keyboard.GetState().IsKeyDown(Keys.Space) && !placingCards)
-            {
-                relocateCards();
-            }
-
-            if (placingCards && Keyboard.GetState().IsKeyUp(Keys.Space))
-                placingCards = false;
-
             if (mouseButtonJustPressed(MouseButtons.Left))
             {
-                Console.WriteLine("Left mouse pressed");
-                clickedCard = clickOnCard();
+                clickedCard = findCardUnderCursor();
 
                 if (clickedCard != null)
-                    Console.WriteLine(clickedCard.ToString());
+                    clickedCardStartPos = clickedCard.pos;
             }
-            else if (clickedCard != null && currentMouseState.LeftButton == ButtonState.Pressed)
+            else if (currentMouseState.LeftButton == ButtonState.Pressed)
             {
-                clickedCard.pos = new Vector2(currentMouseState.X - (clickedCard.getWidth() / 2), currentMouseState.Y - (clickedCard.getHeight() / 2));
+                if (clickedCard != null && clickedCard.IsVisible)
+                    clickedCard.pos = new Vector2(currentMouseState.X - (clickedCard.getWidth() / 2), currentMouseState.Y - (clickedCard.getHeight() / 2));
             }
-
-            if (mouseButtonJustPressed(MouseButtons.Right))
+            else if (mouseButtonJustReleased(MouseButtons.Left))
             {
-                Card rightClickedCard = clickOnCard();
-
-                if (rightClickedCard != null)
-                    rightClickedCard.IsVisible = !rightClickedCard.IsVisible;
-            }
-
-            if (mouseButtonJustPressed(MouseButtons.Middle))
-            {
-                cardScale = ((float)rng.Next(10, 30)) / 100;
-                foreach (Card card in cards)
-                    card.scale = cardScale;
+                if (clickedCard != null)
+                {
+                    clickedCard.pos = clickedCardStartPos;
+                    clickedCard = null;
+                }
             }
 
             base.Update(gameTime);
@@ -161,65 +180,44 @@ namespace Solitaire
         {
             GraphicsDevice.Clear(Color.BurlyWood);
 
-            spriteBatch.Begin(SpriteSortMode.BackToFront, BlendState.AlphaBlend);
+            spriteBatch.Begin(SpriteSortMode.Immediate, BlendState.AlphaBlend);
 
-            foreach (var card in cards)
+            spriteBatch.Draw(cardBack, deckPos, null, Color.White, 0, Vector2.Zero, cardScale, SpriteEffects.None, 0);
+
+            foreach (Vector2 goalPos in goalPositions)
             {
-                card.draw(spriteBatch);
+                spriteBatch.Draw(emptyPile, goalPos, null, Color.White, 0, Vector2.Zero, cardScale, SpriteEffects.None, 0);
             }
+
+            foreach (Pile fieldPile in game.fieldPiles)
+            {
+                List<Card> reversedPile = new List<Card>(fieldPile.getCards().Reverse<Card>()) ;
+                foreach (Card card in reversedPile)
+                    if (card != clickedCard)
+                        card.draw(spriteBatch);
+            }
+
+            if (clickedCard != null)
+                clickedCard.draw(spriteBatch);
 
             spriteBatch.End();
 
             base.Draw(gameTime);
         }
 
-        public Card clickOnCard()
+        public Card findCardUnderCursor()
         {
             Rectangle cursorRegion = new Rectangle(currentMouseState.X, currentMouseState.Y, 1, 1);
 
             foreach (Card card in cards)
             {
-                if (card.bounds.Intersects(cursorRegion))
+                if (card.IsVisible && card.bounds.Intersects(cursorRegion))
                 {
                     return card;
                 }
             }
 
             return null;
-        }
-
-        protected void relocateCards()
-        {
-            placingCards = true;
-            foreach (var card in cards)
-            {
-                bool foundSpot = false;
-                int attempts = 0;
-
-                while (!foundSpot)
-                {
-                    card.pos = new Vector2(rng.Next((int)(width - cardTextureWidth * cardScale)), rng.Next((int)(height - cardTextureHeight * cardScale)));
-                    attempts++;
-
-                    foreach (Card otherCard in cards.Where(otherCard => card != otherCard))
-                    {
-                        if (card.bounds.Intersects(otherCard.bounds) && attempts < maxAttempts)
-                        {
-                            foundSpot = false;
-                        }
-                        else
-                        {
-                            foundSpot = true;
-                        }
-
-                        if (attempts == maxAttempts)
-                        {
-                            Console.WriteLine(String.Format("{0} overlapped with {1} after {2} attempts", card.ToString(), otherCard.ToString(), attempts));
-                        }
-                    }
-                }
-            }
-
         }
 
         public bool mouseButtonJustPressed(MouseButtons button)
