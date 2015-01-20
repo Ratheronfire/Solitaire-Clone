@@ -13,19 +13,12 @@ namespace Solitaire
         public Texture2D texture { get; set; }
         private Texture2D texStorage { get; set; }
 
-        public Vector2 pos { get; set; }
-        public float scale { get; set; }
+        public Rectangle bounds { get; set; }
 
         public byte cardNumber { get; set; }
         public string suit { get; set; }
 
-        public Rectangle bounds
-        {
-            get
-            {
-                return new Rectangle((int) pos.X, (int) pos.Y, (int) getWidth(), (int) getHeight());
-            }
-        }
+        public Pile currentPile { get; set; }
 
         private bool isVisible;
         public bool IsVisible
@@ -39,10 +32,10 @@ namespace Solitaire
             {
                 isVisible = value;
 
-                if (!isVisible)
-                    texture = Solitaire.cardBack;
-                else
+                if (isVisible)
                     texture = texStorage;
+                else
+                    texture = Solitaire.cardBack;
             }
         }
 
@@ -51,28 +44,31 @@ namespace Solitaire
             texture = texStorage = t;
             cardNumber = n;
             suit = s;
-
-            scale = Solitaire.cardScale;
         }
 
         public void draw(SpriteBatch spriteBatch)
         {
-            spriteBatch.Draw(texture, pos, null, Color.White, 0, Vector2.Zero, scale, SpriteEffects.None, 0);
+            spriteBatch.Draw(texture, getPos(), null, Color.White, 0, Vector2.Zero, Solitaire.cardScale, SpriteEffects.None, 0);
+        }
+
+        public Vector2 getPos()
+        {
+            return new Vector2(bounds.Left, bounds.Top);
         }
 
         public float getWidth()
         {
-            return texture.Width * scale;
+            return texture.Width * Solitaire.cardScale;
         }
 
         public float getHeight()
         {
-            return texture.Height * scale;
+            return texture.Height * Solitaire.cardScale;
         }
 
-        public string ToString()
+        public override string ToString()
         {
-            return cardNumber + " of " + suit;
+            return cardNumber + " of " + suit + (isVisible ? "" : " (hidden)");
         }
     }
 }
