@@ -6,36 +6,45 @@ using System.Text;
 
 namespace Solitaire
 {
-    abstract class Pile
+    public abstract class Pile
     {
         protected Stack<Card> cards;
+
+        public Rectangle bounds { get; set; }
 
         abstract public void addCard(Card card);
         abstract public Card removeCard();
         abstract public bool canPlaceCard(Card card);
 
-        public List<Card> getCards()
+        public virtual List<Card> getCards()
         {
             return cards.ToList<Card>();
         }
     }
 
-    class Deck : Pile
+    public class Deck : Pile
     {
-        Stack<Card> hand;
+        public Rectangle handBounds { get; set; }
+        public Hand hand { get; set; }
 
-        public Deck(Stack<Card> c)
+        public Deck(Stack<Card> c, Rectangle b)
         {
             cards = c;
-            hand = new Stack<Card>();
+            bounds = b;
 
             foreach (Card card in cards)
-                card.pos = Solitaire.deckPos;
+            {
+                card.currentPile = this;
+                card.bounds = bounds;
+            }
         }
 
         public override void addCard(Card card)
         {
-            throw new NotImplementedException();
+            cards.Push(card);
+
+            card.bounds = bounds;
+            card.IsVisible = false;
         }
 
         public override Card removeCard()
@@ -51,23 +60,26 @@ namespace Solitaire
                     cardCount = cards.Count;
 
                 for (int i = 0; i < cardCount; i++)
-                    hand.Push(removeCard());
+                {
+                    Card movingCard = removeCard();
+                    hand.addCard(movingCard, i * Solitaire.cardOffset);
+                }
             }
             else
             {
-                cards = (Stack<Card>) hand.Reverse();
-                hand.Clear();
+                while (hand.cardCount() > 0)
+                {
+                    Card movingCard = hand.removeCard();
+                    addCard(movingCard);
+                }
+
+                hand.ClearHand();
             }
         }
 
         public override bool canPlaceCard(Card c)
         {
-            return false;
-        }
-
-        public List<Card> getHand()
-        {
-            return hand.ToList<Card>();
+            throw new NotImplementedException();
         }
 
         public override string ToString()
@@ -79,9 +91,71 @@ namespace Solitaire
                 ret += "    " + c.ToString() + "\n";
             }
 
-            ret += "HAND\n";
+            return ret;
+        }
+    }
 
-            foreach (Card c in hand)
+    public class Hand : Pile
+    {
+        protected new Queue<Card> cards;
+        public Deck deck { get; set; }
+
+        public Hand(Rectangle b)
+        {
+            cards = new Queue<Card>();
+            bounds = b;
+
+            foreach (Card card in cards)
+            {
+                card.currentPile = this;
+                card.bounds = bounds;
+            }
+        }
+
+        public override void addCard(Card card)
+        {
+            throw new NotImplementedException();
+        }
+
+        public void addCard(Card card, int offset)
+        {
+            cards.Enqueue(card);
+
+            card.IsVisible = true;
+            card.bounds = bounds;
+            card.bounds = new Rectangle(card.bounds.X + offset, card.bounds.Y, Solitaire.cardTextureWidth, Solitaire.cardTextureHeight);
+        }
+
+        public override Card removeCard()
+        {
+            return cards.Dequeue();
+        }
+
+        public override bool canPlaceCard(Card card)
+        {
+            throw new NotImplementedException();
+        }
+
+        public override List<Card> getCards()
+        {
+            return cards.ToList<Card>();
+        }
+
+        public int cardCount()
+        {
+            return cards.Count;
+        }
+
+        public void ClearHand()
+        {
+            cards.Clear();
+        }
+
+        public override string ToString()
+        {
+            string ret = "HAND:\n";
+
+            foreach (Card c in cards)
             {
                 ret += "    " + c.ToString() + "\n";
             }
@@ -90,19 +164,21 @@ namespace Solitaire
         }
     }
 
-    class FieldPile : Pile
+    public class FieldPile : Pile
     {
-        int pos;
+        int index;
 
-        public FieldPile(List<Card> c, int p)
+        public FieldPile(List<Card> c, int n, Rectangle b)
         {
             cards = new Stack<Card>();
-            pos = p;
+            index = n;
 
-            for (int i = 0; i < c.Count - 1; i++)
+            foreach (Card card in c)
             {
-                c[i].IsVisible = false;
-                cards.Push(c[i]);
+                card.IsVisible = false;
+                card.currentPile = this;
+
+                cards.Push(card);
             }
 
             Card last = c.Last();
@@ -110,12 +186,12 @@ namespace Solitaire
             last.IsVisible = true;
             cards.Push(last);
 
-            Vector2 basePos = Solitaire.fieldPositions[pos];
+            bounds = b;
 
             for (int i = 0; i < cards.Count; i++)
             {
                 Card card = cards.ElementAt(i);
-                card.pos = new Vector2(basePos.X, basePos.Y + Solitaire.fieldOffset * (cards.Count - 1 - i));
+                card.bounds = new Rectangle(bounds.X, bounds.Y + Solitaire.cardOffset * (cards.Count - 1 - i), Solitaire.cardTextureWidth, Solitaire.cardTextureHeight);
             }
         }
 
@@ -124,7 +200,10 @@ namespace Solitaire
             if (canPlaceCard(card))
             {
                 cards.Push(card);
-                card.pos = Solitaire.fieldPositions[pos];
+
+                card.currentPile = this;
+
+                card.bounds = new Rectangle(bounds.X, bounds.Y + Solitaire.cardOffset * (cards.Count - 1), Solitaire.cardTextureWidth, Solitaire.cardTextureHeight);
             }
         }
 
@@ -158,17 +237,21 @@ namespace Solitaire
         }
     }
 
-    class GoalPile : Pile
+    public class GoalPile : Pile
     {
-        int pos;
+        int index;
 
-        public GoalPile(int p)
+        public GoalPile(int n, Rectangle b)
         {
             cards = new Stack<Card>();
-            pos = p;
+            index = n;
+            bounds = b;
 
             foreach (Card card in cards)
-                card.pos = Solitaire.goalPositions[pos];
+            {
+                card.bounds = bounds;
+                card.currentPile = this;
+            }
         }
 
         public override void addCard(Card card)
@@ -176,7 +259,9 @@ namespace Solitaire
             if (canPlaceCard(card))
             {
                 cards.Push(card);
-                card.pos = Solitaire.goalPositions[pos];
+
+                card.currentPile = this;
+                card.bounds = bounds;
             }
         }
 
